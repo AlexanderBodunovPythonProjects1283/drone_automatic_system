@@ -6,6 +6,7 @@ import numpy as np
 import sys
 sys.path.append("..")
 from network import push_to_rpi_server
+from network import network_check
 
 from PyQt5 import QtGui
 from PyQt5 import QtCore
@@ -29,8 +30,12 @@ with open("results_log.txt","w")as file1:
 
 resently_used={"func":"","number_of_times":"","sum_time":""}
 
-
-def time_of_functions(level_hierarchy):
+# декоратор, записывающий в лог время выполнения произвольной функции
+# если функция выполняется несколько раз подряд,
+# она записывается в лог 1 раз,
+# в лог записывается суммарное время выполнения функций.
+def time_of_functions(level_hierarchy):# level_hierarchy- уровень
+    # иерархии, уникальный для каждой функции
     def inner_(func_):
         def wrapper(*args,**kwargs):
             global resently_used
@@ -46,13 +51,12 @@ def time_of_functions(level_hierarchy):
             else:
                 resently_used["number_of_times"]+=1
                 resently_used["sum_time"]+=time_
-            #print("Функция {0} обработана за {1} милисекунд\n".format(func_.__name__,time_))
-            #print("Function {0} proceed in {1} milliseconds\n".format(func_.__name__,time_))
             return result
         return wrapper
     return inner_
 
 
+#декоратор, записывающий в лог входы и выходы произвольной функции
 def result_printer(func_):
     def wraper(*args,**kwargs):
         result_=func_(*args,**kwargs)
@@ -62,80 +66,15 @@ def result_printer(func_):
     return wraper
 
 
-
-@time_of_functions(1)
-def find_points_x0_y0(a1, a2, b1, b2):
-    x = int((b2 - b1) / (a1 - a2))
-    y = int(a1 * x + b1)
-    return [x, y]
-
-@time_of_functions(0)
-def visualize(img, i, j):
-    # cv2.line(img,(i[0],i[1]),(j[0],j[1]),(255,0,255),4)
-    try:
-        a = (i[1] - j[1]) / (i[0] - j[0])
-    except:
-        a = (i[1] - j[1]) / 0.0001
-
-    b = i[1] - a * i[0]
-
-    try:
-        a_inv = -1 / a
-    except:
-        a_inv = 1e6
-    b1_inv = i[1] - a_inv * i[0]
-    b2_inv = j[1] - a_inv * j[0]
-
-    # cv2.line(img,(int(-b1_inv/a_inv),0),(0,int(b1_inv)),(255,0,255),4)
-    # cv2.line(img,(int(-b2_inv/a_inv),0),(0,int(b2_inv)),(255,0,255),4)
-    # print(str(int(-b1_inv/a_inv))," 0"," 0",str(int(b1_inv)))
-
-    p1 = find_points_x0_y0(a, a_inv, b + const_width_window, b1_inv)
-    p2 = find_points_x0_y0(a, a_inv, b - const_width_window, b1_inv)
-    p4 = find_points_x0_y0(a, a_inv, b + const_width_window, b2_inv)
-    p3 = find_points_x0_y0(a, a_inv, b - const_width_window, b2_inv)
-    # print(p1,p2,p3,p4)
-    cv2.line(img, (p1[0], p1[1]), (p2[0], p2[1]), (255, 0, 255), 4)
-    cv2.line(img, (p2[0], p2[1]), (p3[0], p3[1]), (255, 0, 255), 4)
-    cv2.line(img, (p3[0], p3[1]), (p4[0], p4[1]), (255, 0, 255), 4)
-    cv2.line(img, (p4[0], p4[1]), (p1[0], p1[1]), (255, 0, 255), 4)
-
-    cv2.putText(img, "a=" + str(a), (p2[0], p2[1] + 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 4)
-    return img
-
+# функция, определяющее расстояние между 2 точками
+# округляет результат до целого числа
 @time_of_functions(3)
 def calc_distance(x, y):
     return int(math.sqrt((x[0] - y[0]) ** 2 + (x[1] - y[1]) ** 2))
 
-@time_of_functions(0)
-def calc_fit_points(i, j, different):
-    try:
-        a = (i[1] - j[1]) / (i[0] - j[0])
-    except:
-        a = (i[1] - j[1]) / 0.0001
-
-    b = i[1] - a * i[0]
-
-    try:
-        a_inv = 1 / a
-    except:
-        a_inv = 1e6
-    b1_inv = i[1] + a_inv * i[0]
-    b2_inv = j[1] + a_inv * j[0]
-    count = 0
-    for i in different:
-        s = i[1] - a * i[0] - b
-        s1 = i[1] + a_inv * i[0]
-
-        if s < const_width_window and s > -const_width_window and (s1 - b1_inv) * (s1 - b2_inv) <= 0:
-            count += 1
-    abs_alph = abs(a)
-    # if abs_alph >0.7 and abs_alph<1.3:
-    # return count
-    # else:
-    # return 0
-    return count
-
+# функция
+# вход - список точек
+# выход - матрица расстояний между точками
 @time_of_functions(1)
 def calc_dist(different):
     result = []
@@ -147,6 +86,10 @@ def calc_dist(different):
     return result
 
 
+# функция, определяющая скопления точек
+# вход - матрица расстояний между точками
+# выход - список точек, вокруг которых находится > 4 точек
+# найденные точки ,как правило, являются центрами числа "5"
 @time_of_functions(2)
 def find_points_in_radius(arr_dist1, radius):
     index = 0
@@ -167,6 +110,11 @@ def find_points_in_radius(arr_dist1, radius):
 
     return [[], 0]
 
+# функция
+# вход - массив координат
+# выход - 2 массива с координатами
+# функция необходима, когда осталось более 10 точек,
+# которые не вошли не в одну группу, и надо выделить 2 "5"
 @time_of_functions(2)
 def devide_by_2(arr):
     result_1 = []
@@ -194,9 +142,10 @@ def find_center_1(arr):
                 return arr[i]
     return [0, 0]
 
+#функция, определяющая правую верхнюю точку "5"
+# dx>0,dy>0
 @time_of_functions(5)
 def find_p1(arr):
-    # x>0,y>0
     result = []
     for i in arr:
         if i[0] > 0 and i[1] > 0:
@@ -206,6 +155,8 @@ def find_p1(arr):
     else:
         return [max(result), 0]
 
+#функция, определяющая правую нижнюю точку "5"
+# dx>0,dy<0
 @time_of_functions(5)
 def find_p2(arr):
     # x>0,y<0
@@ -218,9 +169,10 @@ def find_p2(arr):
     else:
         return [max(result), 0]
 
+#функция, определяющая левую нижнюю точку "5"
+# dx<0,dy>0
 @time_of_functions(5)
 def find_p3(arr):
-    # x<0,y>0
     result = []
     for i in arr:
         if i[0] < 0 and i[1] > 0:
@@ -230,6 +182,8 @@ def find_p3(arr):
     else:
         return [min(result), 0]
 
+#функция, определяющая левую верхнюю точку "5"
+# dx<0,dy<0
 @time_of_functions(5)
 def find_p4(arr):
     # x<0,y<0
@@ -242,6 +196,8 @@ def find_p4(arr):
     else:
         return [min(result), 0]
 
+# функция находит координаты точек пересечения
+# 2 сфер с известными координатами ценров
 @result_printer
 @time_of_functions(2)
 def find_points_2_shreres_2(arr_distances):
@@ -278,7 +234,9 @@ def find_points_2_shreres_2(arr_distances):
     R2 = np.dot(np.array([x1, y11]), transform_matrix) + np.array([x01, y01])
     return [R1, R2]
 
-
+# функция находит координаты точек пересечения
+# 2 сфер с известными координатами ценров
+# другим способом
 @result_printer
 @time_of_functions(2)
 def find_points_2_shreres(arr_distances):
@@ -312,6 +270,20 @@ def find_points_2_shreres(arr_distances):
 
     return [[P3x, P3y], [P4x, P4y]]
 
+
+
+# функция определяет координаты квадрокоптера
+# вход - расстояния до "5", последние вычисленные координаты квадрокоптера
+# выход - текущие координаты квадрокоптера
+# 0 "5": текущее положение определить невозможно,
+# возврат предыдущих координат
+# 1 "5": точка, лежащая на окружности с центром в "5",
+# наименее удаленная от предыдущего положения
+# 2 "5": из 2 точек пересечения окружностей выбирается
+# наименее удаленная от предыдущего положения
+# 3 и более "5": определяется точка, в которой
+# пересекаются 3 окружности, с небольшой погрешностью
+# если 3 окружности пересекаются в одной точке - программа работает верно
 @time_of_functions(1)
 def calculate_x_y(arr_distances, x0, y0, num):
     coords = [[0, 52], [119, 0], [0, 175], [], [], [], [], [], [0, 300]]
@@ -388,9 +360,12 @@ y0 = 300
 
 index = 0
 
+# главная функция для модуля определения текущих координат квадрокоптера
+# вход - массив точек, полученный из сокета
+# выход - текущие координаты квадрокоптера
 @time_of_functions(0)
 def get_position(num,x0,y0):
-    print("yess")
+    #print("yess")
 
     different=push_to_rpi_server.read_and_push()
     count_ = 0
@@ -471,7 +446,7 @@ def get_position(num,x0,y0):
     result = calculate_x_y(arr_dist, x0, y0, num)
     x1 = result[0]
     y1 = result[1]
-    print("result  ",result)
+    #print("result  ",result)
     x0 = x1
     y0 = y1
     return [arr_dist, x0, y0]
@@ -484,7 +459,7 @@ class Window(QMainWindow):
         self.title="Pyqt5 Qgraphics view"
         self.top=100
         self.left=100
-        self.width=1000
+        self.width=1500
         self.height=1000
 
         self.prev=[]
@@ -493,6 +468,10 @@ class Window(QMainWindow):
         self.readThread.start()
 
         self.readThread.readthread.connect(self.change_state)
+
+        self.checkThread=CheckThread()
+        self.checkThread.start()
+        self.checkThread.checkthread.connect(self.draw_connection)
 
 
 
@@ -553,12 +532,40 @@ class Window(QMainWindow):
         for i in range(self.minutes):
             scene2.addLine(i*1200, 0, i*1200, 150, redPen)
         view2 = QGraphicsView(scene2, self)
-        view2.setGeometry(0, 550, 1000, 150)
+        view2.setGeometry(0, 550, 1500, 150)
         ######################################
+
+        self.scene3 = QGraphicsScene()
+
+        workstation=self.scene3.addPixmap(QtGui.QPixmap("network_pictures_1/workstation.png"))
+        self.workstation_x=500
+        self.workstation_y =400
+        workstation.setOffset(self.workstation_x, self.workstation_y)
+        router = self.scene3.addPixmap(QtGui.QPixmap("network_pictures_1/router.png"))
+        self.router_x=350
+        self.router_y = 10
+        router.setOffset(self.router_x,self.router_y)
+        server = self.scene3.addPixmap(QtGui.QPixmap("network_pictures_1/rpi.png"))
+        self.server_x=350
+        self.server_y = 250
+        server.setOffset(self.server_x, self.server_y)
+        client_1 = self.scene3.addPixmap(QtGui.QPixmap("network_pictures_1/rpi.png"))
+        self.client_1_x=100
+        self.client_1_y=250
+        client_1.setOffset(self.client_1_x, self.client_1_y)
+
+        view3 = QGraphicsView(self.scene3, self)
+        view3.setGeometry(1001, 0, 500, 500)
+
+        #self.check_connection()
+
+
+
 
         self.setWindowTitle(self.title)
         self.setGeometry(self.top,self.left,self.width,self.height)
 
+    # функция, отрисовывающая новые координаты квадрокоптера
     def change_state(self,arr_all):
         try:
             for i in self.prev:
@@ -598,7 +605,64 @@ class Window(QMainWindow):
             (type, value, traceback) = sys.exc_info()
             sys.excepthook(type, value, traceback)
 
+    # функция, которая отрисовывает состояние сети
+    def draw_connection(self,conn_all):
 
+        print("Наличие подключений: ",conn_all)
+        try:
+
+            network=conn_all["is_network"]
+            socket=conn_all["is_socket"]
+            NFS=conn_all["is_NFS"]
+
+            self.draw_lines(self.workstation_x,self.workstation_y,self.router_x,self.router_y,network[0][0],network[0][1])
+            self.draw_lines(self.server_x, self.server_y, self.router_x, self.router_y, network[1][0], network[1][1])
+            self.draw_lines(self.client_1_x, self.client_1_y, self.router_x, self.router_y, network[2][0], network[2][1])
+
+            self.draw_lines(self.workstation_x,self.workstation_y, self.server_x, self.server_y, socket[0][0],socket[0][1])
+
+            self.draw_lines(self.client_1_x, self.client_1_y, self.server_x, self.server_y, NFS[0][0],NFS[0][1])
+
+
+        except:
+            (type, value, traceback) = sys.exc_info()
+            sys.excepthook(type, value, traceback)
+
+    #функция,которая рисует линии, обозначающие
+    # подключение 2 устройств
+    def draw_lines(self,x1,y1,x2,y2,is_conn_1,is_conn_2):
+        greenPen = QPen(Qt.green)
+        redPen = QPen(Qt.red)
+        x1+=25
+        y1+=25
+        x2 += 25
+        y2 += 25
+
+        angle = math.atan2(y1 - y0, x1 - x0) + math.pi
+        x_1 = x2 + 20 * math.cos(angle - 30)
+        y_1 = y2 + 20 * math.sin(angle - 30)
+        x_2 = x1 + 20 * math.cos(angle - 30)
+        y_2 = y1 + 20 * math.sin(angle - 30)
+        if is_conn_1:
+            pen1=greenPen
+        else:
+            pen1=redPen
+        if is_conn_2:
+            pen2 = greenPen
+        else:
+            pen2 = redPen
+
+        if y1!=y2:
+            self.scene3.addLine(x1+5, y1, x2+5, y2, pen1)
+            self.scene3.addLine(x2+5, y2, x_1+5, y_1, pen1)
+            self.scene3.addLine(x1-5, y1, x2-5, y2, pen2)
+            self.scene3.addLine(x1-5, y1, x_2-5, y_2, pen2)
+        else:
+            self.scene3.addLine(x1 , y1+ 5, x2,y2+5,pen1)
+            self.scene3.addLine(x2, y2+5,x_1, y_1+5,pen1)
+            self.scene3.addLine(x1, y1-5, x2, y2-5, pen2)
+            self.scene3.addLine(x1, y1-5, x_2,y_2-5,pen2)
+        #self.scene3.addLine(x1, y1, x_2, y_2, pen)
 
 # поток для получения координат через TCP socket
 class ReadThread(QtCore.QThread):
@@ -622,9 +686,38 @@ class ReadThread(QtCore.QThread):
             positions.append(self.y0)
             self.x0 = positions[1]
             self.y0 = positions[2]
-            print(positions)
+            #print(positions)
             time.sleep(0.1)
             self.readthread.emit(positions)
+
+# поток для получения текущего состояния сети
+class CheckThread(QtCore.QThread):
+    checkthread = pyqtSignal(dict)
+    def __init__(self,parent=None):
+        super(CheckThread,self).__init__(parent)
+
+    def run (self):
+        with open("test_file.txt","w") as file:
+            pass
+        while True:
+
+                #pass
+            conn_all = network_check.network_check()
+            print(conn_all)
+
+            #time.sleep(1)
+
+            print("Сигнал готов к отправке")
+            try:
+                self.checkthread.emit(conn_all)
+            except:
+                (type, value, traceback) = sys.exc_info()
+                sys.excepthook(type, value, traceback)
+                break
+            print("Сигнал отправлен")
+
+
+
 
 x0 = 100
 y0 = 300
